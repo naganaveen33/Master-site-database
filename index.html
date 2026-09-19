@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tower Site Database</title>
+  <style>
+    :root {
+      --primary: #1e40af;
+      --primary-hover: #1d4ed8;
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #cbd5e1;
+      --text: #0f172a;
+      --muted: #64748b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 12px; }
+    .container { max-width: 1080px; margin: 0 auto; }
+    
+    h1 { font-size: 1.25rem; color: var(--primary); text-align: center; margin-bottom: 12px; }
+    .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+
+    /* Search & Suggestion */
+    .search-wrapper { position: relative; width: 100%; margin-bottom: 12px; }
+    input[type="text"], textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+    input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--primary); }
+
+    .suggestions {
+      position: absolute; top: 100%; left: 0; right: 0; background: #fff;
+      border: 1px solid var(--border); border-radius: 0 0 6px 6px; max-height: 220px;
+      overflow-y: auto; z-index: 99; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: none;
+    }
+    .suggestion-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+    .suggestion-item:hover { background: #f8fafc; }
+
+    /* Controls */
+    .controls-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+    .tech-group { display: flex; gap: 12px; align-items: center; font-size: 14px; font-weight: 600; }
+    .tech-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+    .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+    button { padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
+    .btn-main { background: var(--primary); color: #fff; }
+    .btn-main:hover { background: var(--primary-hover); }
+    .btn-sec { background: #e2e8f0; color: var(--text); }
+    .btn-save { background: #15803d; color: #fff; width: 100%; padding: 12px; font-size: 15px; margin-top: 14px; }
+
+    /* Field Layout */
+    .section-header { font-size: 0.9rem; font-weight: 700; color: var(--primary); margin: 16px 0 8px; border-bottom: 2px solid #e2e8f0; padding-bottom: 3px; }
+    .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+    .field-box { display: flex; flex-direction: column; gap: 3px; }
+    .field-box label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
+
+    /* Log Table */
+    .log-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+    .log-table th, .log-table td { border: 1px solid var(--border); padding: 8px; text-align: left; }
+    .log-table th { background: #f1f5f9; }
+
+    .status-msg { text-align: center; font-size: 13px; font-weight: 600; margin-bottom: 8px; min-height: 20px; }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <h1>Mobile Tower Database Portal</h1>
+
+  <div class="card">
+    <div class="search-wrapper">
+      <input type="text" id="siteSearchInput" placeholder="Search site name (2G / 3G / 4G) or NEP ID..." autocomplete="off" />
+      <div id="suggestionsBox" class="suggestions"></div>
+    </div>
+
+    <div class="controls-row">
+      <div class="tech-group">
+        <label><input type="checkbox" id="chk2G" checked /> 2G</label>
+        <label><input type="checkbox" id="chk3G" checked /> 3G</label>
+        <label><input type="checkbox" id="chk4G" checked /> 4G</label>
+      </div>
+      <div class="btn-row">
+        <button class="btn-main" onclick="loadSiteView()">Submit</button>
+        <button class="btn-sec" onclick="fetchSiteLogs()">Site Activity Log</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="statusNotice" class="status-msg">Connecting to database...</div>
+
+  <!-- Site Editor Container -->
+  <div id="siteDetailsCard" class="card" style="display:none;">
+    <h3 style="margin-bottom: 10px;">Site Parameters & Configuration</h3>
+    <form id="towerDataForm" onsubmit="event.preventDefault(); submitSiteUpdates();">
+      <div id="inputsContainer"></div>
+
+      <!-- Remarks Field -->
+      <div class="section-header">Activity Log Remarks</div>
+      <div class="field-box" style="margin-bottom: 10px;">
+        <label>Remarks for activity log (Optional):</label>
+        <textarea id="remarksInput" rows="2" placeholder="Record maintenance, sector swap, tilt change, alarms cleared..."></textarea>
+      </div>
+
+      <button type="submit" class="btn-save">💾 Save Edits to Google Sheet</button>
+    </form>
+  </div>
+
+  <!-- Activity Logs Container -->
+  <div id="activityLogsCard" class="card" style="display:none;">
+    <h3>Recent Activity History</h3>
+    <div style="overflow-x:auto;">
+      <table class="log-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>NEP ID</th>
+            <th>Site Name</th>
+            <th>Remarks</th>
+          </tr>
+        </thead>
+        <tbody id="logsTbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 1. SET YOUR APPS SCRIPT WEB APP URL HERE:
+  const API_URL = "https://script.google.com/macros/s/AKfycbwE3mxNjVZfCg1XWdJIE0aKtHNfYNl7fBQDt_Xas6i6o-4OeANWOJ8Q02jm8UIJi9bT/exec";
+
+  let allTowerRecords = [];
+  let selectedTower = null;
+
+  // 15 Static Columns (Col A to Col O)
+  const staticCols = [
+    "NEP id", "RFID", "IP ID", "2G site name", "2G make", "3G site name", "3G make",
+    "4G site name", "4G make", "latitude", "longitude", "antenna height", "BTS section",
+    "BTS incharge name", "AGM name"
+  ];
+
+  // 40 Technology Specific Columns (Col P to Col BC)
+  const techColsMap = {
+    "2G": [ // 14 columns: Col P to Col AC
+      "2G alpha azimuth", "2G beta azimuth", "2G gamma azimuth",
+      "2G alpha Mtilt", "2G beta Mtilt", "2G gamma Mtilt",
+      "2G alpha Etilt", "2G beta Etilt", "2G gamma Etilt",
+      "2G alpha BCCH", "2G beta BCCH", "2G gamma BCCH",
+      "2G BSIC", "2G LAC"
+    ],
+    "3G": [ // 13 columns: Col AD to Col AP
+      "3G alpha azimuth", "3G beta azimuth", "3G gamma azimuth",
+      "3G alpha Mtilt", "3G beta Mtilt", "3G gamma Mtilt",
+      "3G alpha Etilt", "3G beta Etilt", "3G gamma Etilt",
+      "3G alpha BCCH", "3G beta BCCH", "3G gamma PSC",
+      "3G LAC"
+    ],
+    "4G": [ // 13 columns: Col AQ to Col BC
+      "4G alpha azimuth", "4G beta azimuth", "4G gamma azimuth",
+      "4G alpha Mtilt", "4G beta Mtilt", "4G gamma Mtilt",
+      "4G alpha Etilt", "4G beta Etilt", "4G gamma Etilt",
+      "4G alpha BCCH", "4G beta BCCH", "4G gamma PCI",
+      "4G LAC"
+    ]
+  };
+
+  // Initial Load
+  window.addEventListener('DOMContentLoaded', async () => {
+    try {
+      const res = await fetch(API_URL);
+      allTowerRecords = await res.json();
+      document.getElementById('statusNotice').innerText = `Ready. Loaded ${allTowerRecords.length} tower sites.`;
+      setTimeout(() => { document.getElementById('statusNotice').innerText = ""; }, 3000);
+    } catch (err) {
+      document.getElementById('statusNotice').innerText = "Database connection error. Verify Apps Script permissions.";
+    }
+  });
+
+  // Autocomplete functionality
+  const siteSearchInput = document.getElementById('siteSearchInput');
+  const suggestionsBox = document.getElementById('suggestionsBox');
+
+  siteSearchInput.addEventListener('input', () => {
+    const query = siteSearchInput.value.trim().toLowerCase();
+    suggestionsBox.innerHTML = '';
+
+    if (!query) {
+      suggestionsBox.style.display = 'none';
+      return;
+    }
+
+    const filtered = allTowerRecords.filter(item => {
+      return (item["2G site name"] && String(item["2G site name"]).toLowerCase().includes(query)) ||
+             (item["3G site name"] && String(item["3G site name"]).toLowerCase().includes(query)) ||
+             (item["4G site name"] && String(item["4G site name"]).toLowerCase().includes(query)) ||
+             (item["NEP id"] && String(item["NEP id"]).toLowerCase().includes(query));
+    }).slice(0, 8);
+
+    if (filtered.length === 0) {
+      suggestionsBox.style.display = 'none';
+      return;
+    }
+
+    filtered.forEach(site => {
+      const row = document.createElement('div');
+      row.className = 'suggestion-item';
+      row.innerText = `${site["NEP id"] \vert{}\vert{} ''} \vert{} 2G: ${site["2G site name"] || '-'} | 3G: ${site["3G site name"] \vert{}\vert{} '-'} \vert{} 4G: ${site["4G site name"] || '-'}`;
+      row.onclick = () => {
+        selectedTower = site;
+        siteSearchInput.value = site["4G site name"] || site["2G site name"] || site["3G site name"] || site["NEP id"];
+        suggestionsBox.style.display = 'none';
+      };
+      suggestionsBox.appendChild(row);
+    });
+
+    suggestionsBox.style.display = 'block';
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.search-wrapper')) suggestionsBox.style.display = 'none';
+  });
+
+  function loadSiteView() {
+    if (!selectedTower) {
+      const q = siteSearchInput.value.trim().toLowerCase();
+      selectedTower = allTowerRecords.find(item =>
+        (item["2G site name"] && String(item["2G site name"]).toLowerCase() === q) ||
+        (item["3G site name"] && String(item["3G site name"]).toLowerCase() === q) ||
+        (item["4G site name"] && String(item["4G site name"]).toLowerCase() === q) ||
+        (item["NEP id"] && String(item["NEP id"]).toLowerCase() === q)
+      );
+      if (!selectedTower) {
+        alert("Select or type a valid tower site first.");
+        return;
+      }
+    }
+
+    document.getElementById('activityLogsCard').style.display = 'none';
+    const container = document.getElementById('inputsContainer');
+    container.innerHTML = '';
+
+    // Static Columns (Always Displayed)
+    createFieldGroup(container, "Static Site Information", staticCols);
+
+    // Dynamic Columns according to Checkbox selection
+    if (document.getElementById('chk2G').checked) createFieldGroup(container, "2G Technical Parameters", techColsMap["2G"]);
+    if (document.getElementById('chk3G').checked) createFieldGroup(container, "3G Technical Parameters", techColsMap["3G"]);
+    if (document.getElementById('chk4G').checked) createFieldGroup(container, "4G Technical Parameters", techColsMap["4G"]);
+
+    document.getElementById('remarksInput').value = '';
+    document.getElementById('siteDetailsCard').style.display = 'block';
+  }
+
+  function createFieldGroup(parent, title, columns) {
+    const head = document.createElement('div');
+    head.className = 'section-header';
+    head.innerText = title;
+    parent.appendChild(head);
+
+    const grid = document.createElement('div');
+    grid.className = 'field-grid';
+
+    columns.forEach(col => {
+      const box = document.createElement('div');
+      box.className = 'field-box';
+      const val = selectedTower[col] !== undefined ? selectedTower[col] : '';
+      box.innerHTML = `
+        <label>${col}</label>
+        <input type="text" name="${col}" value="${val}">
+      `;
+      grid.appendChild(box);
+    });
+
+    parent.appendChild(grid);
+  }
+
+  async function submitSiteUpdates() {
+    const statusNotice = document.getElementById('statusNotice');
+    statusNotice.innerText = "Writing updates directly to Google Sheets...";
+
+    const inputs = document.getElementById('towerDataForm').querySelectorAll('input[type="text"]');
+    inputs.forEach(input => {
+      selectedTower[input.name] = input.value;
+    });
+
+    const remarks = document.getElementById('remarksInput').value;
+
+    const payload = {
+      action: 'updateSite',
+      _rowIndex: selectedTower._rowIndex,
+      data: selectedTower,
+      remarks: remarks
+    };
+
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (result.status === 'success') {
+        statusNotice.innerText = "✅ Successfully saved to Google Sheet!";
+        document.getElementById('remarksInput').value = '';
+      } else {
+        statusNotice.innerText = "Error: " + result.message;
+      }
+    } catch (e) {
+      statusNotice.innerText = "Network error updating sheet.";
+    }
+  }
+
+  async function fetchSiteLogs() {
+    const statusNotice = document.getElementById('statusNotice');
+    const query = siteSearchInput.value.trim();
+    statusNotice.innerText = "Loading activity logs...";
+
+    try {
+      const res = await fetch(`${API_URL}?action=getLogs&siteName=${encodeURIComponent(query)}`);
+      const logs = await res.json();
+      const tbody = document.getElementById('logsTbody');
+      tbody.innerHTML = '';
+
+      if (logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No logs recorded for this site.</td></tr>';
+      } else {
+        logs.reverse().forEach(log => {
+          const tr = document.createElement('tr');
+          const time = log.timestamp ? new Date(log.timestamp).toLocaleString() : '-';
+          tr.innerHTML = `
+            <td>${time}</td>
+            <td>${log.nepId || '-'}</td>
+            <td>${log.siteName || '-'}</td>
+            <td>${log.remarks || '-'}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }
+
+      document.getElementById('siteDetailsCard').style.display = 'none';
+      document.getElementById('activityLogsCard').style.display = 'block';
+      statusNotice.innerText = "";
+    } catch (err) {
+      statusNotice.innerText = "Unable to fetch logs.";
+    }
+  }
+</script>
+
+</body>
+</html>
