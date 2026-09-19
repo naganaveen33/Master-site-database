@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Tower Site Database</title>
+  <title>Mobile Tower Master Database</title>
   <style>
     :root {
       --primary: #1e40af;
@@ -21,7 +21,7 @@
     h1 { font-size: 1.25rem; color: var(--primary); text-align: center; margin-bottom: 12px; }
     .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
 
-    /* Search & Suggestion */
+    /* Search & Autocomplete Dropdown */
     .search-wrapper { position: relative; width: 100%; margin-bottom: 12px; }
     input[type="text"], textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
     input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--primary); }
@@ -34,17 +34,19 @@
     .suggestion-item { padding: 9px 12px; cursor: pointer; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
     .suggestion-item:hover { background: #f8fafc; }
 
-    /* Controls */
+    /* Technology Checkboxes & Controls */
     .controls-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
     .tech-group { display: flex; gap: 12px; align-items: center; font-size: 14px; font-weight: 600; }
     .tech-group label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
     .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
 
-    button { padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; }
+    button { padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: 0.2s; }
     .btn-main { background: var(--primary); color: #fff; }
     .btn-main:hover { background: var(--primary-hover); }
     .btn-sec { background: #e2e8f0; color: var(--text); }
+    .btn-sec:hover { background: #cbd5e1; }
     .btn-save { background: #15803d; color: #fff; width: 100%; padding: 12px; font-size: 15px; margin-top: 14px; }
+    .btn-save:hover { background: #166534; }
 
     /* Field Layout */
     .section-header { font-size: 0.9rem; font-weight: 700; color: var(--primary); margin: 16px 0 8px; border-bottom: 2px solid #e2e8f0; padding-bottom: 3px; }
@@ -52,7 +54,7 @@
     .field-box { display: flex; flex-direction: column; gap: 3px; }
     .field-box label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
 
-    /* Log Table */
+    /* Activity Log Table */
     .log-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
     .log-table th, .log-table td { border: 1px solid var(--border); padding: 8px; text-align: left; }
     .log-table th { background: #f1f5f9; }
@@ -86,13 +88,13 @@
 
   <div id="statusNotice" class="status-msg">Connecting to database...</div>
 
-  <!-- Site Editor Container -->
+  <!-- Dynamic Tower Data Form -->
   <div id="siteDetailsCard" class="card" style="display:none;">
     <h3 style="margin-bottom: 10px;">Site Parameters & Configuration</h3>
     <form id="towerDataForm" onsubmit="event.preventDefault(); submitSiteUpdates();">
       <div id="inputsContainer"></div>
 
-      <!-- Remarks Field -->
+      <!-- Remarks for Activity Log (Optional) -->
       <div class="section-header">Activity Log Remarks</div>
       <div class="field-box" style="margin-bottom: 10px;">
         <label>Remarks for activity log (Optional):</label>
@@ -123,7 +125,7 @@
 </div>
 
 <script>
-  // 1. SET YOUR APPS SCRIPT WEB APP URL HERE:
+  // Replace with your Google Apps Script Web App URL ending in /exec
   const API_URL = "https://script.google.com/macros/s/AKfycbwE3mxNjVZfCg1XWdJIE0aKtHNfYNl7fBQDt_Xas6i6o-4OeANWOJ8Q02jm8UIJi9bT/exec";
 
   let allTowerRecords = [];
@@ -136,7 +138,7 @@
     "BTS incharge name", "AGM name"
   ];
 
-  // 40 Technology Specific Columns (Col P to Col BC)
+  // 40 Technology Columns (Col P to Col BC)
   const techColsMap = {
     "2G": [ // 14 columns: Col P to Col AC
       "2G alpha azimuth", "2G beta azimuth", "2G gamma azimuth",
@@ -161,19 +163,32 @@
     ]
   };
 
-  // Initial Load
+  // Initial Load with explicit redirect following
   window.addEventListener('DOMContentLoaded', async () => {
+    const statusNotice = document.getElementById('statusNotice');
+    statusNotice.innerText = "Connecting to database...";
+
     try {
-      const res = await fetch(API_URL);
+      const res = await fetch(API_URL, {
+        method: 'GET',
+        mode: 'cors',
+        redirect: 'follow'
+      });
+
+      if (!res.ok) {
+        throw new Error(`Server returned HTTP ${res.status}`);
+      }
+
       allTowerRecords = await res.json();
-      document.getElementById('statusNotice').innerText = `Ready. Loaded ${allTowerRecords.length} tower sites.`;
-      setTimeout(() => { document.getElementById('statusNotice').innerText = ""; }, 3000);
+      statusNotice.innerText = `Ready. Loaded ${allTowerRecords.length} tower sites.`;
+      setTimeout(() => { statusNotice.innerText = ""; }, 3000);
     } catch (err) {
-      document.getElementById('statusNotice').innerText = "Database connection error. Verify Apps Script permissions.";
+      console.error("Fetch failed:", err);
+      statusNotice.innerHTML = `<span style="color:red;">Failed to connect: ${err.message}. Ensure deployment is set to 'Anyone'.</span>`;
     }
   });
 
-  // Autocomplete functionality
+  // Autocomplete Suggestions
   const siteSearchInput = document.getElementById('siteSearchInput');
   const suggestionsBox = document.getElementById('suggestionsBox');
 
@@ -201,7 +216,7 @@
     filtered.forEach(site => {
       const row = document.createElement('div');
       row.className = 'suggestion-item';
-      row.innerText = `${site["NEP id"] \vert{}\vert{} ''} \vert{} 2G: ${site["2G site name"] || '-'} | 3G: ${site["3G site name"] \vert{}\vert{} '-'} \vert{} 4G: ${site["4G site name"] || '-'}`;
+      row.innerText = `${site["NEP id"] || ''} | 2G: ${site["2G site name"] || '-'} | 3G: ${site["3G site name"] || '-'} | 4G: ${site["4G site name"] || '-'}`;
       row.onclick = () => {
         selectedTower = site;
         siteSearchInput.value = site["4G site name"] || site["2G site name"] || site["3G site name"] || site["NEP id"];
@@ -227,7 +242,7 @@
         (item["NEP id"] && String(item["NEP id"]).toLowerCase() === q)
       );
       if (!selectedTower) {
-        alert("Select or type a valid tower site first.");
+        alert("Please pick or type a valid tower site name or NEP ID first.");
         return;
       }
     }
@@ -236,10 +251,10 @@
     const container = document.getElementById('inputsContainer');
     container.innerHTML = '';
 
-    // Static Columns (Always Displayed)
+    // Static site columns
     createFieldGroup(container, "Static Site Information", staticCols);
 
-    // Dynamic Columns according to Checkbox selection
+    // Selected tech columns
     if (document.getElementById('chk2G').checked) createFieldGroup(container, "2G Technical Parameters", techColsMap["2G"]);
     if (document.getElementById('chk3G').checked) createFieldGroup(container, "3G Technical Parameters", techColsMap["3G"]);
     if (document.getElementById('chk4G').checked) createFieldGroup(container, "4G Technical Parameters", techColsMap["4G"]);
@@ -313,7 +328,11 @@
     statusNotice.innerText = "Loading activity logs...";
 
     try {
-      const res = await fetch(`${API_URL}?action=getLogs&siteName=${encodeURIComponent(query)}`);
+      const res = await fetch(`${API_URL}?action=getLogs&siteName=${encodeURIComponent(query)}`, {
+        method: 'GET',
+        mode: 'cors',
+        redirect: 'follow'
+      });
       const logs = await res.json();
       const tbody = document.getElementById('logsTbody');
       tbody.innerHTML = '';
@@ -338,7 +357,7 @@
       document.getElementById('activityLogsCard').style.display = 'block';
       statusNotice.innerText = "";
     } catch (err) {
-      statusNotice.innerText = "Unable to fetch logs.";
+      statusNotice.innerText = "Unable to fetch logs: " + err.message;
     }
   }
 </script>
