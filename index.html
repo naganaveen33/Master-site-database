@@ -168,40 +168,16 @@
   const API_URL = "https://script.google.com/macros/s/AKfycbwE3mxNjVZfCg1XWdJIE0aKtHNfYNl7fBQDt_Xas6i6o-4OeANWOJ8Q02jm8UIJi9bT/exec";
 
   let allTowerRecords = [];
+  let dynamicHeaders = [];
   let selectedTower = null;
-  let originalValuesSnapshot = {}; // Tracks original values to detect edits
+  let originalValuesSnapshot = {};
 
-  // 15 Static Columns (Col A to Col O)
-  const staticCols = [
-    "NEP id", "RFID", "IP ID", "2G site name", "2G make", "3G site name", "3G make",
-    "4G site name", "4G make", "latitude", "longitude", "antenna height", "BTS section",
-    "BTS incharge name", "AGM name"
-  ];
-
-  // 40 Technology Columns (Col P to Col BC)
-  const techColsMap = {
-    "2G": [ // 14 columns
-      "2G alpha azimuth", "2G beta azimuth", "2G gamma azimuth",
-      "2G alpha Mtilt", "2G beta Mtilt", "2G gamma Mtilt",
-      "2G alpha Etilt", "2G beta Etilt", "2G gamma Etilt",
-      "2G alpha BCCH", "2G beta BCCH", "2G gamma BCCH",
-      "2G BSIC", "2G LAC"
-    ],
-    "3G": [ // 13 columns
-      "3G alpha azimuth", "3G beta azimuth", "3G gamma azimuth",
-      "3G alpha Mtilt", "3G beta Mtilt", "3G gamma Mtilt",
-      "3G alpha Etilt", "3G beta Etilt", "3G gamma Etilt",
-      "3G alpha BCCH", "3G beta BCCH", "3G gamma PSC",
-      "3G LAC"
-    ],
-    "4G": [ // 13 columns
-      "4G alpha azimuth", "4G beta azimuth", "4G gamma azimuth",
-      "4G alpha Mtilt", "4G beta Mtilt", "4G gamma Mtilt",
-      "4G alpha Etilt", "4G beta Etilt", "4G gamma Etilt",
-      "4G alpha BCCH", "4G beta BCCH", "4G gamma PCI",
-      "4G LAC"
-    ]
-  };
+  // Overview columns that stay in the static general section
+  const staticOverviewSet = new Set([
+    "2g site name", "2g make", 
+    "3g site name", "3g make", 
+    "4g site name", "4g make"
+  ]);
 
   // Initial Load
   window.addEventListener('DOMContentLoaded', async () => {
@@ -217,8 +193,20 @@
 
       if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
 
-      allTowerRecords = await res.json();
-      statusNotice.innerText = `Ready. Loaded ${allTowerRecords.length} tower sites.`;
+      const data = await res.json();
+      
+      // Handles current Code.gs array format directly without backend edits
+      if (Array.isArray(data)) {
+        allTowerRecords = data;
+        if (allTowerRecords.length > 0) {
+          dynamicHeaders = Object.keys(allTowerRecords[0]).filter(k => k !== '_rowIndex');
+        }
+      } else if (data.rows && data.headers) {
+        allTowerRecords = data.rows;
+        dynamicHeaders = data.headers;
+      }
+
+      statusNotice.innerText = `Ready. Loaded ${allTowerRecords.length} tower sites & ${dynamicHeaders.length} columns from sheet.`;
       setTimeout(() => { statusNotice.innerText = ""; }, 3000);
     } catch (err) {
       console.error("Fetch failed:", err);
@@ -270,6 +258,32 @@
     if (!e.target.closest('.search-wrapper')) suggestionsBox.style.display = 'none';
   });
 
+  // Dynamically partition sheet columns into categories
+  function categorizeDynamicHeaders(headers) {
+    const staticCols = [];
+    const cols2G = [];
+    const cols3G = [];
+    const cols4G = [];
+
+    headers.forEach(header => {
+      const lower = header.toLowerCase();
+      if (staticOverviewSet.has(lower)) {
+        staticCols.push(header);
+      } else if (lower.startsWith("2g ") || lower.startsWith("2g_")) {
+        cols2G.push(header);
+      } else if (lower.startsWith("3g ") || lower.startsWith("3g_")) {
+        cols3G.push(header);
+      } else if (lower.startsWith("4g ") || lower.startsWith("4g_")) {
+        cols4G.push(header);
+      } else {
+        // Any new unclassified column directly goes to Static Information
+        staticCols.push(header);
+      }
+    });
+
+    return { staticCols, cols2G, cols3G, cols4G };
+  }
+
   function loadSiteView() {
     if (!selectedTower) {
       const q = siteSearchInput.value.trim().toLowerCase();
@@ -285,25 +299,29 @@
       }
     }
 
-    // Capture initial values for change-detection
     originalValuesSnapshot = JSON.parse(JSON.stringify(selectedTower));
 
     document.getElementById('activityLogsCard').style.display = 'none';
     const container = document.getElementById('inputsContainer');
     container.innerHTML = '';
 
-    // Static site columns (Light Slate/Gray)
-    createFieldGroup(container, "Static Site Information", staticCols, "section-static");
+    // Split dynamically retrieved headers
+    const { staticCols, cols2G, cols3G, cols4G } = categorizeDynamicHeaders(dynamicHeaders);
 
-    // Selected tech columns with dedicated colors
-    if (document.getElementById('chk2G').checked) {
-      createFieldGroup(container, "2G Technical Parameters", techColsMap["2G"], "section-2g");
+    // Static site columns (Light Slate)
+    if (staticCols.length > 0) {
+      createFieldGroup(container, "Static Site Information", staticCols, "section-static");
     }
-    if (document.getElementById('chk3G').checked) {
-      createFieldGroup(container, "3G Technical Parameters", techColsMap["3G"], "section-3g");
+
+    // Technology columns filtered by checkbox
+    if (document.getElementById('chk2G').checked && cols2G.length > 0) {
+      createFieldGroup(container, "2G Technical Parameters", cols2G, "section-2g");
     }
-    if (document.getElementById('chk4G').checked) {
-      createFieldGroup(container, "4G Technical Parameters", techColsMap["4G"], "section-4g");
+    if (document.getElementById('chk3G').checked && cols3G.length > 0) {
+      createFieldGroup(container, "3G Technical Parameters", cols3G, "section-3g");
+    }
+    if (document.getElementById('chk4G').checked && cols4G.length > 0) {
+      createFieldGroup(container, "4G Technical Parameters", cols4G, "section-4g");
     }
 
     document.getElementById('remarksInput').value = '';
@@ -344,7 +362,7 @@
     const inputs = document.getElementById('towerDataForm').querySelectorAll('input[type="text"]');
     const changeList = [];
 
-    // Compare original snapshot values with current input values
+    // Compare original snapshot values with current inputs to auto-generate remark
     inputs.forEach(input => {
       const colName = input.name;
       const newVal = input.value.trim();
@@ -361,10 +379,8 @@
     let finalRemarks = "";
 
     if (userRemarks !== "") {
-      // If user typed custom remarks, use them
       finalRemarks = userRemarks;
     } else if (changeList.length > 0) {
-      // If user left remarks blank, auto-generate change logs
       finalRemarks = "Auto: " + changeList.join("; ");
     }
 
@@ -384,7 +400,6 @@
       const result = await response.json();
       if (result.status === 'success') {
         statusNotice.innerText = "✅ Successfully saved changes & updated activity log!";
-        // Update snapshot to new baseline
         originalValuesSnapshot = JSON.parse(JSON.stringify(selectedTower));
         document.getElementById('remarksInput').value = '';
       } else {
