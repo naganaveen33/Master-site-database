@@ -23,8 +23,8 @@
 
     /* Search & Autocomplete Dropdown */
     .search-wrapper { position: relative; width: 100%; margin-bottom: 12px; }
-    input[type="text"], textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
-    input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--primary); }
+    input[type="text"], textarea { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; background: #ffffff; }
+    input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 2px rgba(30, 64, 175, 0.15); }
 
     .suggestions {
       position: absolute; top: 100%; left: 0; right: 0; background: #fff;
@@ -48,8 +48,44 @@
     .btn-save { background: #15803d; color: #fff; width: 100%; padding: 12px; font-size: 15px; margin-top: 14px; }
     .btn-save:hover { background: #166534; }
 
-    /* Field Layout */
-    .section-header { font-size: 0.9rem; font-weight: 700; color: var(--primary); margin: 16px 0 8px; border-bottom: 2px solid #e2e8f0; padding-bottom: 3px; }
+    /* Colored Technology Section Blocks */
+    .section-card {
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 14px;
+      border: 1px solid transparent;
+    }
+    .section-static {
+      background-color: #f8fafc;
+      border-color: #cbd5e1;
+    }
+    .section-2g {
+      background-color: #fffbeb;
+      border-color: #fde68a;
+    }
+    .section-3g {
+      background-color: #eff6ff;
+      border-color: #bfdbfe;
+    }
+    .section-4g {
+      background-color: #f0fdf4;
+      border-color: #bbf7d0;
+    }
+
+    .section-header {
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+      padding-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .section-static .section-header { color: #334155; border-bottom: 2px solid #cbd5e1; }
+    .section-2g .section-header { color: #b45309; border-bottom: 2px solid #fcd34d; }
+    .section-3g .section-header { color: #1d4ed8; border-bottom: 2px solid #93c5fd; }
+    .section-4g .section-header { color: #15803d; border-bottom: 2px solid #86efac; }
+
     .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
     .field-box { display: flex; flex-direction: column; gap: 3px; }
     .field-box label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; }
@@ -90,15 +126,19 @@
 
   <!-- Dynamic Tower Data Form -->
   <div id="siteDetailsCard" class="card" style="display:none;">
-    <h3 style="margin-bottom: 10px;">Site Parameters & Configuration</h3>
+    <h3 style="margin-bottom: 12px;">Site Parameters & Configuration</h3>
     <form id="towerDataForm" onsubmit="event.preventDefault(); submitSiteUpdates();">
       <div id="inputsContainer"></div>
 
       <!-- Remarks for Activity Log (Optional) -->
-      <div class="section-header">Activity Log Remarks</div>
-      <div class="field-box" style="margin-bottom: 10px;">
-        <label>Remarks for activity log (Optional):</label>
-        <textarea id="remarksInput" rows="2" placeholder="Record maintenance, sector swap, tilt change, alarms cleared..."></textarea>
+      <div class="section-card" style="background-color: #ffffff; border: 1px solid #cbd5e1; margin-top: 12px;">
+        <div class="section-header" style="color: #334155; border-bottom: 2px solid #e2e8f0;">
+          Activity Log Remarks
+        </div>
+        <div class="field-box" style="margin-top: 8px;">
+          <label>Remarks for activity log (Optional - Auto-fills modified parameters if left blank):</label>
+          <textarea id="remarksInput" rows="2" placeholder="Leave empty to auto-record field changes, or type custom notes..."></textarea>
+        </div>
       </div>
 
       <button type="submit" class="btn-save">💾 Save Edits to Google Sheet</button>
@@ -125,11 +165,11 @@
 </div>
 
 <script>
-  // Replace with your Google Apps Script Web App URL ending in /exec
   const API_URL = "https://script.google.com/macros/s/AKfycbwE3mxNjVZfCg1XWdJIE0aKtHNfYNl7fBQDt_Xas6i6o-4OeANWOJ8Q02jm8UIJi9bT/exec";
 
   let allTowerRecords = [];
   let selectedTower = null;
+  let originalValuesSnapshot = {}; // Tracks original values to detect edits
 
   // 15 Static Columns (Col A to Col O)
   const staticCols = [
@@ -140,21 +180,21 @@
 
   // 40 Technology Columns (Col P to Col BC)
   const techColsMap = {
-    "2G": [ // 14 columns: Col P to Col AC
+    "2G": [ // 14 columns
       "2G alpha azimuth", "2G beta azimuth", "2G gamma azimuth",
       "2G alpha Mtilt", "2G beta Mtilt", "2G gamma Mtilt",
       "2G alpha Etilt", "2G beta Etilt", "2G gamma Etilt",
       "2G alpha BCCH", "2G beta BCCH", "2G gamma BCCH",
       "2G BSIC", "2G LAC"
     ],
-    "3G": [ // 13 columns: Col AD to Col AP
+    "3G": [ // 13 columns
       "3G alpha azimuth", "3G beta azimuth", "3G gamma azimuth",
       "3G alpha Mtilt", "3G beta Mtilt", "3G gamma Mtilt",
       "3G alpha Etilt", "3G beta Etilt", "3G gamma Etilt",
       "3G alpha BCCH", "3G beta BCCH", "3G gamma PSC",
       "3G LAC"
     ],
-    "4G": [ // 13 columns: Col AQ to Col BC
+    "4G": [ // 13 columns
       "4G alpha azimuth", "4G beta azimuth", "4G gamma azimuth",
       "4G alpha Mtilt", "4G beta Mtilt", "4G gamma Mtilt",
       "4G alpha Etilt", "4G beta Etilt", "4G gamma Etilt",
@@ -163,7 +203,7 @@
     ]
   };
 
-  // Initial Load with explicit redirect following
+  // Initial Load
   window.addEventListener('DOMContentLoaded', async () => {
     const statusNotice = document.getElementById('statusNotice');
     statusNotice.innerText = "Connecting to database...";
@@ -175,9 +215,7 @@
         redirect: 'follow'
       });
 
-      if (!res.ok) {
-        throw new Error(`Server returned HTTP ${res.status}`);
-      }
+      if (!res.ok) throw new Error(`Server returned HTTP ${res.status}`);
 
       allTowerRecords = await res.json();
       statusNotice.innerText = `Ready. Loaded ${allTowerRecords.length} tower sites.`;
@@ -247,27 +285,39 @@
       }
     }
 
+    // Capture initial values for change-detection
+    originalValuesSnapshot = JSON.parse(JSON.stringify(selectedTower));
+
     document.getElementById('activityLogsCard').style.display = 'none';
     const container = document.getElementById('inputsContainer');
     container.innerHTML = '';
 
-    // Static site columns
-    createFieldGroup(container, "Static Site Information", staticCols);
+    // Static site columns (Light Slate/Gray)
+    createFieldGroup(container, "Static Site Information", staticCols, "section-static");
 
-    // Selected tech columns
-    if (document.getElementById('chk2G').checked) createFieldGroup(container, "2G Technical Parameters", techColsMap["2G"]);
-    if (document.getElementById('chk3G').checked) createFieldGroup(container, "3G Technical Parameters", techColsMap["3G"]);
-    if (document.getElementById('chk4G').checked) createFieldGroup(container, "4G Technical Parameters", techColsMap["4G"]);
+    // Selected tech columns with dedicated colors
+    if (document.getElementById('chk2G').checked) {
+      createFieldGroup(container, "2G Technical Parameters", techColsMap["2G"], "section-2g");
+    }
+    if (document.getElementById('chk3G').checked) {
+      createFieldGroup(container, "3G Technical Parameters", techColsMap["3G"], "section-3g");
+    }
+    if (document.getElementById('chk4G').checked) {
+      createFieldGroup(container, "4G Technical Parameters", techColsMap["4G"], "section-4g");
+    }
 
     document.getElementById('remarksInput').value = '';
     document.getElementById('siteDetailsCard').style.display = 'block';
   }
 
-  function createFieldGroup(parent, title, columns) {
+  function createFieldGroup(parent, title, columns, themeClass) {
+    const cardSection = document.createElement('div');
+    cardSection.className = `section-card ${themeClass}`;
+
     const head = document.createElement('div');
     head.className = 'section-header';
     head.innerText = title;
-    parent.appendChild(head);
+    cardSection.appendChild(head);
 
     const grid = document.createElement('div');
     grid.className = 'field-grid';
@@ -283,25 +333,46 @@
       grid.appendChild(box);
     });
 
-    parent.appendChild(grid);
+    cardSection.appendChild(grid);
+    parent.appendChild(cardSection);
   }
 
   async function submitSiteUpdates() {
     const statusNotice = document.getElementById('statusNotice');
-    statusNotice.innerText = "Writing updates directly to Google Sheets...";
+    statusNotice.innerText = "Checking changes and syncing with Google Sheets...";
 
     const inputs = document.getElementById('towerDataForm').querySelectorAll('input[type="text"]');
+    const changeList = [];
+
+    // Compare original snapshot values with current input values
     inputs.forEach(input => {
-      selectedTower[input.name] = input.value;
+      const colName = input.name;
+      const newVal = input.value.trim();
+      const oldVal = (originalValuesSnapshot[colName] !== undefined ? String(originalValuesSnapshot[colName]) : '').trim();
+
+      if (newVal !== oldVal) {
+        changeList.push(`${colName} changed from '${oldVal || "EMPTY"}' to '${newVal || "EMPTY"}'`);
+      }
+
+      selectedTower[colName] = input.value;
     });
 
-    const remarks = document.getElementById('remarksInput').value;
+    const userRemarks = document.getElementById('remarksInput').value.trim();
+    let finalRemarks = "";
+
+    if (userRemarks !== "") {
+      // If user typed custom remarks, use them
+      finalRemarks = userRemarks;
+    } else if (changeList.length > 0) {
+      // If user left remarks blank, auto-generate change logs
+      finalRemarks = "Auto: " + changeList.join("; ");
+    }
 
     const payload = {
       action: 'updateSite',
       _rowIndex: selectedTower._rowIndex,
       data: selectedTower,
-      remarks: remarks
+      remarks: finalRemarks
     };
 
     try {
@@ -312,7 +383,9 @@
       });
       const result = await response.json();
       if (result.status === 'success') {
-        statusNotice.innerText = "✅ Successfully saved to Google Sheet!";
+        statusNotice.innerText = "✅ Successfully saved changes & updated activity log!";
+        // Update snapshot to new baseline
+        originalValuesSnapshot = JSON.parse(JSON.stringify(selectedTower));
         document.getElementById('remarksInput').value = '';
       } else {
         statusNotice.innerText = "Error: " + result.message;
